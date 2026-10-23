@@ -1,0 +1,20 @@
+# Render Blueprint for a hosted copy of the refund desk.
+# Nothing in this repo deploys by itself. Connect the repo in the Render dashboard to use it.
+services:
+  - type: web
+    name: refund-desk
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: HOST
+        value: 0.0.0.0
+      # The public hostname Render gives the service, so the Host and Origin checks accept it.
+      - key: ALLOWED_HOSTS
+        sync: false

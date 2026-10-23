@@ -1,0 +1,12 @@
+{
+  "shop": "Plumb 35",
+  "policy_url": "https://plumb-35.elghaly.dev/refunds/",
+  "support_address": "support@elghaly.dev",
+  "time_limit_days": null,
+  "reason_required": false,
+  "refund_destination": "original_payer_only",
+  "exchange_exception": true,
+  "once_per_purchase": true,
+  "reply_languages": ["en", "ar", "ru", "zh", "de", "es"],
+  "folder": "Refund requests"
+}
