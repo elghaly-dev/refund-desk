@@ -1,0 +1,20 @@
+{
+  "_note": "SYNTHETIC. An order whose capture was refunded. Ids are made up.",
+  "id": "9SYN0000ORDER0002",
+  "status": "COMPLETED",
+  "payment_source": { "paypal": { "email_address": "ana@example.com", "account_id": "SYNPAYER0001" } },
+  "purchase_units": [
+    {
+      "amount": { "currency_code": "USD", "value": "12.50" },
+      "payments": {
+        "captures": [
+          { "id": "9SYN0000CAPTURE02", "status": "REFUNDED", "amount": { "currency_code": "USD", "value": "12.50" } }
+        ],
+        "refunds": [
+          { "id": "9SYN0000REFUND001", "status": "COMPLETED", "amount": { "currency_code": "USD", "value": "12.50" } }
+        ]
+      }
+    }
+  ],
+  "create_time": "2026-10-18T08:00:00Z"
+}

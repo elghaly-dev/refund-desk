@@ -1,0 +1,22 @@
+{
+  "_note": "SYNTHETIC. Shaped after the Disputes v1 list example in PayPal's API reference. Ids are made up.",
+  "items": [
+    {
+      "dispute_id": "PP-D-90001",
+      "create_time": "2026-10-21T09:00:00Z",
+      "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+      "status": "WAITING_FOR_SELLER_RESPONSE",
+      "dispute_life_cycle_stage": "INQUIRY",
+      "dispute_amount": { "currency_code": "USD", "value": "25.00" },
+      "disputed_transactions": [{ "seller_transaction_id": "9SYN0000CAPTURE01" }]
+    },
+    {
+      "dispute_id": "PP-D-90002",
+      "create_time": "2026-10-19T09:00:00Z",
+      "reason": "UNAUTHORISED",
+      "status": "RESOLVED",
+      "dispute_amount": { "currency_code": "USD", "value": "12.50" }
+    }
+  ],
+  "links": [{ "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes?page_size=2&next_page_token=SYN", "rel": "next", "method": "GET" }]
+}
