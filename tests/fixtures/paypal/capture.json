@@ -1,0 +1,10 @@
+{
+  "_note": "SYNTHETIC. Shaped after the Payments v2 capture GET example in PayPal's API reference. Ids are made up.",
+  "id": "9SYN0000CAPTURE01",
+  "status": "COMPLETED",
+  "amount": { "currency_code": "USD", "value": "25.00" },
+  "final_capture": true,
+  "supplementary_data": { "related_ids": { "order_id": "9SYN0000ORDER0001" } },
+  "create_time": "2026-10-20T10:00:05Z",
+  "update_time": "2026-10-20T10:00:05Z"
+}

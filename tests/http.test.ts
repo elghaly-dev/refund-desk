@@ -15,6 +15,8 @@ import {
   protocolVersionOk,
   startServer,
 } from "../src/http.js";
+import { PaypalClient, type FetchLike } from "../src/paypal/client.js";
+import { PaypalError } from "../src/paypal/errors.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -158,6 +160,13 @@ describe("/mcp hardening", () => {
       host: "127.0.0.1",
       port: 0,
       env: { ALLOWED_HOSTS: "desk.example.com" },
+      // No key file on this server: every PayPal tool must say so, and nothing leaves the machine.
+      paypal: new PaypalClient({
+        credentials: () => {
+          throw new PaypalError("not_configured");
+        },
+        fetch: () => Promise.reject(new Error("no network in tests")),
+      }),
     });
     const address = server.address();
     port = typeof address === "object" && address ? address.port : 0;
@@ -284,20 +293,40 @@ describe("/mcp hardening", () => {
     assert.equal(reply.body.includes("node_modules"), false);
   });
 
-  it("lists check_refund and nothing else", async () => {
+  it("lists the four read-only tools", async () => {
     const reply = await send(port, { body: TOOLS_LIST });
     const tools = (rpcResult(reply.body) as { tools: Array<{ name: string; annotations?: Record<string, unknown> }> }).tools;
-    assert.deepEqual(tools.map((tool) => tool.name), ["check_refund"]);
-    assert.equal(tools[0].annotations?.readOnlyHint, true);
-    assert.equal(tools[0].annotations?.destructiveHint, false);
+    assert.deepEqual(tools.map((tool) => tool.name).sort(), ["check_refund", "find_order", "get_capture", "list_disputes"]);
+    for (const tool of tools) {
+      assert.equal(tool.annotations?.readOnlyHint, true, tool.name);
+      assert.equal(tool.annotations?.destructiveHint, false, tool.name);
+    }
   });
 
-  it("check_refund declares the card outputSchema", async () => {
+  it("every tool declares the card outputSchema", async () => {
     const reply = await send(port, { body: TOOLS_LIST });
     const tools = (rpcResult(reply.body) as { tools: Array<{ name: string; outputSchema?: { properties?: Record<string, unknown>; required?: string[] } }> }).tools;
-    const schema = tools[0].outputSchema;
-    assert.ok(schema?.properties?.refused && schema.properties.summary && schema.properties.action);
-    assert.deepEqual(schema.required, ["refused"]);
+    for (const tool of tools) {
+      const schema = tool.outputSchema;
+      assert.ok(schema?.properties?.refused && schema.properties.summary && schema.properties.action, tool.name);
+      assert.deepEqual(schema.required, ["refused"], tool.name);
+    }
+  });
+
+  it("answers a PayPal tool on a server with no keys with not_configured, and check_refund still works", async () => {
+    const reply = await send(port, { body: toolCall(12, "find_order", { order_id: "9SYN0000ORDER0001" }) });
+    const result = rpcResult(reply.body) as { structuredContent: Record<string, unknown>; isError: boolean };
+    assert.equal(result.isError, true);
+    assert.equal(result.structuredContent.error, "not_configured");
+    assert.equal(result.structuredContent.refused, false);
+    assert.match(String(result.structuredContent.summary), /check_refund still works/);
+  });
+
+  it("refuses a PayPal id with a slash as bad_id", async () => {
+    const reply = await send(port, { body: toolCall(13, "get_capture", { capture_id: "../v1/oauth2/token" }) });
+    const result = rpcResult(reply.body) as { structuredContent: Record<string, unknown>; isError: boolean };
+    assert.equal(result.isError, true);
+    assert.equal(result.structuredContent.error, "bad_id");
   });
 
   it("escalates a request to pay another wallet, with structuredContent equal to the text block", async () => {
@@ -347,5 +376,69 @@ describe("/mcp hardening", () => {
     assert.match(reply.body, /"mcp_spec":"2025-11-25"/);
     assert.match(reply.body, /"read_only":true/);
     assert.match(reply.body, /"paypal":"sandbox"/);
+    assert.match(reply.body, /"paypal_credential":"not_loaded"/);
+  });
+});
+
+describe("PayPal tools over /mcp with a scripted sandbox", () => {
+  let server: Server;
+  let port = 0;
+  const fixture = (name: string): string => readFileSync(join(ROOT, "tests/fixtures/paypal", name), "utf8");
+  const replies = [
+    JSON.stringify({ access_token: "test-access-token", token_type: "Bearer", expires_in: 3600 }),
+    fixture("order-completed.json"),
+    fixture("disputes.json"),
+  ];
+  const urls: string[] = [];
+  const fetch: FetchLike = async (url) => {
+    urls.push(url);
+    const body = replies.shift();
+    if (body === undefined) throw new Error(`unexpected call ${url}`);
+    return new Response(body, { status: 200 });
+  };
+
+  before(async () => {
+    server = await startServer({
+      host: "127.0.0.1",
+      port: 0,
+      paypal: new PaypalClient({
+        credentials: () => ({ clientId: "test-client-id-0001", clientSecret: "test.secret.not.real", fingerprint: "00000000" }),
+        fetch,
+      }),
+    });
+    const address = server.address();
+    port = typeof address === "object" && address ? address.port : 0;
+  });
+
+  after(() => new Promise<void>((resolve) => server.close(() => resolve())));
+
+  it("find_order returns the summary and a purchase that check_refund accepts", async () => {
+    const reply = await send(port, { body: toolCall(20, "find_order", { order_id: "9SYN0000ORDER0001" }) });
+    const result = rpcResult(reply.body) as { structuredContent: { summary: string; order: { purchase: Record<string, unknown> } } };
+    assert.equal(result.structuredContent.summary, "Order 9SYN0000ORDER0001 is COMPLETED, 25.00 USD, 1 capture, not refunded.");
+    assert.equal(reply.body.includes("Sample Lane"), false);
+
+    const purchase = result.structuredContent.order.purchase;
+    const check = await send(port, {
+      body: toolCall(21, "check_refund", {
+        message: { from: "Ana <ana@example.com>", text: "Hi, I'd like a refund for order 9SYN0000ORDER0001." },
+        purchases: [purchase],
+      }),
+    });
+    const verdict = rpcResult(check.body) as { structuredContent: { action: string; checks: Record<string, unknown> } };
+    assert.equal(verdict.structuredContent.action, "acknowledge");
+    assert.equal(verdict.structuredContent.checks.sender_matches_purchase, "yes");
+    assert.equal(verdict.structuredContent.checks.already_refunded, "no");
+  });
+
+  it("list_disputes reuses the token and says there is a next page", async () => {
+    const reply = await send(port, { body: toolCall(22, "list_disputes", { page_size: 2 }) });
+    const result = rpcResult(reply.body) as { structuredContent: { summary: string } };
+    assert.equal(result.structuredContent.summary, "2 disputes; more on the next page.");
+    assert.deepEqual(
+      urls.map((url) => new URL(url).pathname),
+      ["/v1/oauth2/token", "/v2/checkout/orders/9SYN0000ORDER0001", "/v1/customer/disputes"],
+    );
+    for (const url of urls) assert.equal(new URL(url).host, "api-m.sandbox.paypal.com");
   });
 });

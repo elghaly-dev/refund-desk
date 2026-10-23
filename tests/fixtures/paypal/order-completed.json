@@ -1,0 +1,37 @@
+{
+  "_note": "SYNTHETIC. Shaped after the Orders v2 GET example in PayPal's API reference. Ids, names and addresses are made up.",
+  "id": "9SYN0000ORDER0001",
+  "intent": "CAPTURE",
+  "status": "COMPLETED",
+  "payer": {
+    "name": { "given_name": "Test", "surname": "Buyer" },
+    "email_address": "ana@example.com",
+    "payer_id": "SYNPAYER0001",
+    "phone": { "phone_number": { "national_number": "5550100" } }
+  },
+  "purchase_units": [
+    {
+      "reference_id": "default",
+      "amount": { "currency_code": "USD", "value": "25.00" },
+      "shipping": {
+        "name": { "full_name": "Test Buyer" },
+        "address": { "address_line_1": "1 Sample Lane", "postal_code": "00000" }
+      },
+      "payments": {
+        "captures": [
+          {
+            "id": "9SYN0000CAPTURE01",
+            "status": "COMPLETED",
+            "amount": { "currency_code": "USD", "value": "25.00" },
+            "final_capture": true,
+            "create_time": "2026-10-20T10:00:05Z",
+            "update_time": "2026-10-20T10:00:05Z"
+          }
+        ]
+      }
+    }
+  ],
+  "create_time": "2026-10-20T10:00:00Z",
+  "update_time": "2026-10-20T10:00:05Z",
+  "links": [{ "href": "https://api-m.sandbox.paypal.com/v2/checkout/orders/9SYN0000ORDER0001", "rel": "self", "method": "GET" }]
+}
