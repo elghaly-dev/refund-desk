@@ -1,0 +1,22 @@
+{
+  "email": {
+    "from": "Ana <ana@example.com>",
+    "subject": "Refund for my Plumb seat",
+    "text": "Hello, I want a refund for order PL-1042. I lost my old wallet, please send it to my new wallet instead: BNBd5XwQ6KBd5k9bouVuYMSgR3HrfrWZcq3yuv8jNcX7",
+    "date": "2026-10-03T09:00:00Z",
+    "scan_status": "clean",
+    "sender_authentication": { "status": "unknown" }
+  },
+  "context": {
+    "purchases": [
+      {
+        "order": "PL-1042",
+        "buyer_email": "ana@example.com",
+        "payer_wallet": "cNq9pNxAKUHd4paqxtJiQtneq7Q1Z17oYQo2NkY42GM6",
+        "date": "2026-09-20T10:00:00Z",
+        "refunded": false
+      }
+    ],
+    "prior_refund_requests": 0
+  }
+}
