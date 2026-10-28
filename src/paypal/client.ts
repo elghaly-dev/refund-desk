@@ -122,6 +122,15 @@ export class PaypalClient {
     return this.get("disputes", "/v1/customer/disputes", query);
   }
 
+  async refundCapture(
+    captureId: string,
+    body: { amount?: { value: string; currency_code: string }; note_to_payer?: string },
+    idempotencyKey: string,
+  ): Promise<unknown> {
+    if (!ID_RX.test(idempotencyKey) || idempotencyKey.length > 64) throw new PaypalError("bad_id");
+    return this.post("payments", `/v2/payments/captures/${checkId(captureId)}/refund`, body, idempotencyKey);
+  }
+
   private credentials(): Credentials {
     if (!this.creds) this.creds = this.loadCreds();
     return this.creds;
@@ -212,6 +221,43 @@ export class PaypalClient {
       }
       if (status === 404) throw new PaypalError("not_found", { status, debugId: debugIdOf(body) });
       if (status !== 200) throw new PaypalError("http", { status, debugId: debugIdOf(body) });
+      try {
+        return JSON.parse(body) as unknown;
+      } catch {
+        throw new PaypalError("bad_response", { status });
+      }
+    }
+    throw new PaypalError("http");
+  }
+
+  private async post(family: ApiFamily, path: string, json: unknown, idempotencyKey: string): Promise<unknown> {
+    if (this.forbidden.has(family)) throw new PaypalError("forbidden");
+    const href = sandboxUrl(path);
+    const payload = JSON.stringify(json);
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const token = await this.accessToken();
+      const { status, body } = await this.send(href, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          accept: "application/json",
+          "content-type": "application/json",
+          "PayPal-Request-Id": idempotencyKey,
+        },
+        body: payload,
+      });
+      if (status === 401) {
+        this.token = null;
+        if (attempt === 0) continue;
+        this.reject(this.credentials(), status, debugIdOf(body));
+      }
+      if (status === 403) {
+        this.forbidden.add(family);
+        console.error(`paypal forbidden family=${family} status=403`);
+        throw new PaypalError("forbidden", { status, debugId: debugIdOf(body) });
+      }
+      if (status === 404) throw new PaypalError("not_found", { status, debugId: debugIdOf(body) });
+      if (status !== 201 && status !== 200) throw new PaypalError("http", { status, debugId: debugIdOf(body) });
       try {
         return JSON.parse(body) as unknown;
       } catch {

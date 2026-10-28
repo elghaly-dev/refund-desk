@@ -1,0 +1,8 @@
+{
+  "_note": "SYNTHETIC. Shaped after PayPal Refund capture response.",
+  "id": "9SYN0000REFUND002",
+  "status": "COMPLETED",
+  "amount": { "currency_code": "USD", "value": "15.00" },
+  "create_time": "2026-10-28T12:00:00Z",
+  "update_time": "2026-10-28T12:00:01Z"
+}

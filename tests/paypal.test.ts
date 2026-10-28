@@ -276,6 +276,8 @@ describe("summaries", () => {
           capture_id: "9SYN0000CAPTURE01",
           status: "COMPLETED",
           amount: { value: "25.00", currency: "USD" },
+          refunded_amount: undefined,
+          refundable_amount: { value: "25.00", currency: "USD" },
           created: "2026-10-20T10:00:05Z",
           order_id: undefined,
           refunded: false,
@@ -309,11 +311,17 @@ describe("summaries", () => {
       capture_id: "9SYN0000CAPTURE01",
       status: "COMPLETED",
       amount: { value: "25.00", currency: "USD" },
+      refunded_amount: undefined,
+      refundable_amount: { value: "25.00", currency: "USD" },
       created: "2026-10-20T10:00:05Z",
       order_id: "9SYN0000ORDER0001",
       refunded: false,
     });
-    assert.equal(summarizeCapture({ id: "X1", status: "PARTIALLY_REFUNDED" }).refunded, true);
+    const partial = summarizeCapture(fixture("capture-partial.json"));
+    assert.equal(partial.refundable_amount?.value, "15.00");
+    assert.equal(partial.refunded, false);
+    assert.equal(summarizeCapture({ id: "X1", status: "PARTIALLY_REFUNDED", amount: { currency_code: "USD", value: "1.00" } }).refunded, false);
+    assert.equal(summarizeCapture({ id: "X2", status: "REFUNDED", amount: { currency_code: "USD", value: "1.00" } }).refunded, true);
   });
 
   it("lists disputes and says when there is a next page", () => {

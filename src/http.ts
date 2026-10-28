@@ -272,7 +272,8 @@ export function startServer(
           mcp_spec: MCP_SPEC,
           paypal: "sandbox",
           paypal_credential: paypal.state,
-          read_only: true,
+          read_only: false,
+          refund_confirm_required: true,
         }),
       );
       return;
