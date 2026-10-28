@@ -4,13 +4,13 @@ A refund desk for a small shop. An AI agent reads each refund request, checks it
 
 ## Status
 
-Step 1 of 5: an MCP server with one tool, `check_refund`. There are no PayPal calls yet.
+Step 2 of 5: the policy check, plus three read-only tools for the PayPal sandbox. Nothing can move money yet.
 
 | Step | What it adds |
 | --- | --- |
-| 1 (this) | MCP server, the policy check, tests, CI, public-safety check |
-| 2 | PayPal sandbox: find the order, list disputes, draft a refund (nothing moves) |
-| 3 | A refund on the original sandbox capture, after a person confirms with a one-time code; an evidence receipt per decision |
+| 1 | MCP server, the policy check, tests, CI, public-safety check |
+| 2 (this) | PayPal sandbox, read-only: find an order, read a capture, list disputes |
+| 3 | Draft a refund (nothing moves); then a refund on the original sandbox capture after a person confirms with a one-time code; an evidence receipt per decision |
 | 4 | Hosted demo on Render, setup steps for judges, three seeded cases |
 | 5 | Demo video and write-up |
 
@@ -45,11 +45,46 @@ Input: one `message` (`from`, `text`, optional `subject`, `date`, `scan_status`)
 
 The card also carries the flags, the reasons, what was pulled out of the text (order ids, transaction ids, addresses, amounts, links) and the policy it was checked against. `policy.example.json` is the policy of the Plumb 35 shop: no time limit, no reason asked, money back once per purchase, to the payment that paid. Point `REFUND_POLICY_FILE` at your own.
 
+## The PayPal sandbox tools
+
+| Tool | What it reads | Notes |
+| --- | --- | --- |
+| `find_order` | one order by id: status, amount, captures, refunded or not | also returns a `purchase` to pass straight to `check_refund` |
+| `get_capture` | one captured payment by id: status, amount, its order id | a refund can only ever go back to a capture |
+| `list_disputes` | disputes on the shop's sandbox account, optionally by state or transaction | newest first, up to 50 |
+
+All three are read-only. They call `api-m.sandbox.paypal.com` and nothing else: the host is a constant, every URL is checked before it is sent, ids must be letters, digits and dashes, and redirects are refused. Buyer names, phone numbers and postal addresses are dropped from every answer; the agent sees the buyer's email and payer id, which the policy check needs.
+
+### Set up the sandbox keys
+
+1. At developer.paypal.com, open **Apps & Credentials**, choose **Sandbox**, and create an app. Copy its client id and secret.
+2. Save them outside the repo, readable by you alone. This asks for both values and does not show the secret:
+
+   ```sh
+   mkdir -p ~/.config/refund-desk && chmod 700 ~/.config/refund-desk
+   printf 'Sandbox client id: '; read -r PP_ID
+   printf 'Sandbox secret: '; stty -echo; read -r PP_SECRET; stty echo; echo
+   ( umask 077; printf 'PAYPAL_CLIENT_ID=%s\nPAYPAL_CLIENT_SECRET=%s\n' "$PP_ID" "$PP_SECRET" > ~/.config/refund-desk/sandbox.env )
+   unset PP_ID PP_SECRET
+   ```
+
+3. Start the server again. `PAYPAL_CREDENTIALS_FILE` points somewhere else if you need it to.
+
+The server refuses a key file that other users can read. It never prints a key; when it has to name one, it shows an 8-character fingerprint (the start of the SHA-256 of `id:secret`). Without a key file the PayPal tools answer `not_configured` and `check_refund` works as before.
+
+### When PayPal says no
+
+- **401 or 403 from the token endpoint:** the credential goes into the rejected state. No further request is sent until you replace the key file and restart. `/health` shows `"paypal_credential":"rejected"`.
+- **401 from a lookup:** the desk fetches one fresh token and tries once more. A second 401 is a rejection, as above.
+- **403 from a lookup:** that kind of request (orders, payments or disputes) is refused until a restart; the others keep working. Usually the sandbox app is missing that feature.
+- **404, other errors, timeouts (10 s), answers over 1 MB:** a fixed sentence and PayPal's `debug_id` when there is one. PayPal's own error text is never passed on.
+
 ## What it never does
 
 - Follow text written inside a request. It is matched against fixed patterns and never run or obeyed.
 - Use an address, card or account written in a request as the refund destination.
 - Send a reply, store a request, or move money. In step 3 a refund becomes possible, and then only on the original sandbox payment, after a person confirms.
+- Call any PayPal host other than the sandbox, or keep a key anywhere but the key file.
 
 ## Checks
 

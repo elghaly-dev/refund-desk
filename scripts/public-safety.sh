@@ -17,7 +17,7 @@ if [ -n "$names" ]; then
   fail=1
 fi
 
-secret='BEGIN [A-Z ]*PRIVATE KEY|A21AA[A-Za-z0-9_-]{30,}|PAYPAL_CLIENT_SECRET=[^[:space:]#]|client_secret["'"'"']?[[:space:]]*[:=][[:space:]]*["'"'"'][A-Za-z0-9_-]{20,}'
+secret='BEGIN [A-Z ]*PRIVATE KEY|A21AA[A-Za-z0-9_-]{30,}|PAYPAL_CLIENT_(ID|SECRET)=["'"'"']?[A-Za-z0-9_-]{10,}|client_secret["'"'"']?[[:space:]]*[:=][[:space:]]*["'"'"'][A-Za-z0-9_-]{20,}'
 hits=$(git grep -nIE "$secret" -- . "$self" | cut -d: -f1,2 || true)
 if [ -n "$hits" ]; then
   echo "lines that look like a key, token or secret:"

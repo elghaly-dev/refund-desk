@@ -2,6 +2,7 @@ import { createMcpHandler, SUPPORTED_PROTOCOL_VERSIONS } from "@modelcontextprot
 import { toNodeHandler } from "@modelcontextprotocol/node";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { createDeskServer } from "./mcp.js";
+import { sharedPaypal, type PaypalClient } from "./paypal/client.js";
 
 export const MCP_PATH = "/mcp";
 export const MCP_SPEC = "2025-11-25";
@@ -163,8 +164,9 @@ function drain(req: IncomingMessage, extra = 1024 * 1024): void {
   req.resume();
 }
 
-export function createHandler() {
-  return createMcpHandler(() => createDeskServer(), {
+/** `paypal` is for tests; the server uses one shared sandbox client. */
+export function createHandler(paypal?: PaypalClient) {
+  return createMcpHandler(() => createDeskServer(undefined, paypal), {
     responseMode: "json",
     maxRequestBodySize: MAX_BODY_BYTES,
     onerror: (error: Error) => {
@@ -178,8 +180,8 @@ export interface McpRequestGuard {
 }
 
 /** The /mcp entry: every check answers with fixed text, then the SDK handler gets a pre-read body. */
-export function createMcpRequestHandler(allowed: string[]): McpRequestGuard {
-  const nodeHandler = toNodeHandler(createHandler(), {
+export function createMcpRequestHandler(allowed: string[], paypal?: PaypalClient): McpRequestGuard {
+  const nodeHandler = toNodeHandler(createHandler(paypal), {
     maxRequestBodySize: MAX_BODY_BYTES,
     onerror: (error: Error) => {
       console.error(`mcp adapter error name=${error.name}`);
@@ -248,12 +250,15 @@ export function createMcpRequestHandler(allowed: string[]): McpRequestGuard {
   };
 }
 
-export function startServer(options: { host?: string; port?: number; env?: NodeJS.ProcessEnv } = {}): Promise<Server> {
+export function startServer(
+  options: { host?: string; port?: number; env?: NodeJS.ProcessEnv; paypal?: PaypalClient } = {},
+): Promise<Server> {
   const env = options.env ?? process.env;
   // Binds to 0.0.0.0 for a container or Render; pass HOST=127.0.0.1 to keep it on this machine.
   const host = options.host ?? env.HOST ?? "0.0.0.0";
   const port = options.port ?? Number(env.PORT ?? 3000);
-  const handleMcp = createMcpRequestHandler(allowedHostnames(env));
+  const paypal = options.paypal ?? sharedPaypal();
+  const handleMcp = createMcpRequestHandler(allowedHostnames(env), paypal);
 
   const server = createServer((req, res) => {
     const path = (req.url ?? "/").split("?")[0];
@@ -266,6 +271,7 @@ export function startServer(options: { host?: string; port?: number; env?: NodeJ
           transport: "streamable-http",
           mcp_spec: MCP_SPEC,
           paypal: "sandbox",
+          paypal_credential: paypal.state,
           read_only: true,
         }),
       );
