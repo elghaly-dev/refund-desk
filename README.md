@@ -4,13 +4,13 @@ A refund desk for a small shop. An AI agent reads each refund request, checks it
 
 ## Status
 
-Step 2 of 5: the policy check, plus three read-only tools for the PayPal sandbox. Nothing can move money yet.
+Step 3 of 5: draft a sandbox refund, then send it only after a person confirms with a one-time code.
 
 | Step | What it adds |
 | --- | --- |
 | 1 | MCP server, the policy check, tests, CI, public-safety check |
-| 2 (this) | PayPal sandbox, read-only: find an order, read a capture, list disputes |
-| 3 | Draft a refund (nothing moves); then a refund on the original sandbox capture after a person confirms with a one-time code; an evidence receipt per decision |
+| 2 | PayPal sandbox, read-only: find an order, read a capture, list disputes |
+| 3 (this) | Draft a refund (nothing moves); confirm on the original sandbox capture with a one-time code |
 | 4 | Hosted demo on Render, setup steps for judges, three seeded cases |
 | 5 | Demo video and write-up |
 
@@ -52,8 +52,10 @@ The card also carries the flags, the reasons, what was pulled out of the text (o
 | `find_order` | one order by id: status, amount, captures, refunded or not | also returns a `purchase` to pass straight to `check_refund` |
 | `get_capture` | one captured payment by id: status, amount, its order id | a refund can only ever go back to a capture |
 | `list_disputes` | disputes on the shop's sandbox account, optionally by state or transaction | newest first, up to 50 |
+| `draft_refund` | a refund proposal after `check_refund` would acknowledge | read-only; returns a one-time confirmation code |
+| `confirm_refund` | posts one sandbox refund when the code matches | needs `proposal_id` and the code from `draft_refund` |
 
-All three are read-only. They call `api-m.sandbox.paypal.com` and nothing else: the host is a constant, every URL is checked before it is sent, ids must be letters, digits and dashes, and redirects are refused. Buyer names, phone numbers and postal addresses are dropped from every answer; the agent sees the buyer's email and payer id, which the policy check needs.
+The lookup tools and `draft_refund` do not call PayPal's refund API. They call `api-m.sandbox.paypal.com` and nothing else: the host is a constant, every URL is checked before it is sent, ids must be letters, digits and dashes, and redirects are refused. Buyer names, phone numbers and postal addresses are dropped from every answer; the agent sees the buyer's email and payer id, which the policy check needs.
 
 ### Set up the sandbox keys
 
@@ -79,11 +81,23 @@ The server refuses a key file that other users can read. It never prints a key; 
 - **403 from a lookup:** that kind of request (orders, payments or disputes) is refused until a restart; the others keep working. Usually the sandbox app is missing that feature.
 - **404, other errors, timeouts (10 s), answers over 1 MB:** a fixed sentence and PayPal's `debug_id` when there is one. PayPal's own error text is never passed on.
 
+## Person-in-the-loop refunds (sandbox)
+
+Two tools work together. Nothing leaves the desk until the shop owner types the code.
+
+1. **`draft_refund`** — The agent passes the same `message` and `purchases` you would use for `check_refund`, plus the sandbox `capture_id` (from `find_order` or `get_capture`). The desk runs the policy check again. If the answer is not `acknowledge`, it refuses and nothing is proposed. Otherwise it reads the capture, checks the amount against what is still refundable (capture amount minus earlier refunds), and returns a **proposal** with a **one-time confirmation code**. No call to PayPal's refund API yet; no money moves.
+
+2. **Show the code to the shop owner** — The agent displays the confirmation code out of band (chat, ticket, phone). The owner compares the amount and capture id to what they expect in the PayPal sandbox dashboard.
+
+3. **`confirm_refund`** — The owner (or the agent on their instruction) calls this with the `proposal_id` and the **exact confirmation code**. If the code is missing or wrong, the desk refuses and **nothing is sent to PayPal**. When the code matches, one refund is posted to the original capture on the sandbox. The amount cannot exceed what was on the proposal or what is still refundable on the capture. Each proposal carries its own idempotency key; calling `confirm_refund` again for the same proposal returns the same refund id and does not refund twice.
+
+To try it in the PayPal sandbox: create or complete a sandbox payment so you have a **capture id**, run `draft_refund`, then in the [sandbox dashboard](https://www.sandbox.paypal.com/) (or **Activity** for the sandbox business account) confirm the capture and amount match before you call `confirm_refund` with the code.
+
 ## What it never does
 
 - Follow text written inside a request. It is matched against fixed patterns and never run or obeyed.
 - Use an address, card or account written in a request as the refund destination.
-- Send a reply, store a request, or move money. In step 3 a refund becomes possible, and then only on the original sandbox payment, after a person confirms.
+- Send a reply or store a request. A sandbox refund is sent only through `confirm_refund`, only on the original capture, and only after the one-time confirmation code matches.
 - Call any PayPal host other than the sandbox, or keep a key anywhere but the key file.
 
 ## Checks
