@@ -35,6 +35,10 @@ export interface CaptureSummary {
   capture_id: string;
   status: string;
   amount?: Money;
+  /** Sum of earlier refunds on this capture, when PayPal reports it. */
+  refunded_amount?: Money;
+  /** What may still be refunded on this capture (capture amount minus earlier refunds). */
+  refundable_amount?: Money;
   created?: string;
   order_id?: string;
   refunded: boolean;
@@ -43,14 +47,44 @@ export interface CaptureSummary {
 export function summarizeCapture(raw: unknown): CaptureSummary {
   const c = obj(raw);
   const status = text(c.status) ?? "UNKNOWN";
+  const amount = money(c.amount);
+  const breakdown = obj(c.seller_receivable_breakdown);
+  const refundedAmount = money(breakdown.total_refunded_amount);
+  let refundableAmount: Money | undefined;
+  if (amount) {
+    const left =
+      refundedAmount && refundedAmount.currency === amount.currency
+        ? subtractMoney(amount.value, refundedAmount.value)
+        : amount.value;
+    refundableAmount = { value: left, currency: amount.currency };
+  }
+  if (status === "REFUNDED" && amount) {
+    refundableAmount = { value: "0.00", currency: amount.currency };
+  }
+  const fullyRefunded = status === "REFUNDED" || (refundableAmount !== undefined && refundableAmount.value === "0.00");
   return {
     capture_id: text(c.id) ?? "",
     status,
-    amount: money(c.amount),
+    amount,
+    refunded_amount: refundedAmount,
+    refundable_amount: refundableAmount,
     created: text(c.create_time),
     order_id: text(obj(obj(c.supplementary_data).related_ids).order_id),
-    refunded: REFUNDED.has(status),
+    refunded: fullyRefunded,
   };
+}
+
+/** Decimal subtraction for two same-scale money strings; assumes non-negative inputs. */
+function subtractMoney(captured: string, refunded: string): string {
+  const toCents = (v: string) => {
+    const [whole, frac] = v.split(".");
+    return BigInt(whole) * 100n + BigInt(frac);
+  };
+  const left = toCents(captured) - toCents(refunded);
+  if (left <= 0n) return "0.00";
+  const whole = left / 100n;
+  const frac = left % 100n;
+  return `${whole}.${frac.toString().padStart(2, "0")}`;
 }
 
 export interface OrderSummary {
@@ -118,4 +152,19 @@ export function summarizeDisputes(raw: unknown): { disputes: DisputeSummary[]; m
   });
   const more = list(page.links).some((link) => text(obj(link).rel) === "next");
   return { disputes, more };
+}
+
+export interface RefundSummary {
+  refund_id: string;
+  status: string;
+  amount?: Money;
+}
+
+export function summarizeRefund(raw: unknown): RefundSummary {
+  const r = obj(raw);
+  return {
+    refund_id: text(r.id) ?? "",
+    status: text(r.status) ?? "UNKNOWN",
+    amount: money(r.amount),
+  };
 }

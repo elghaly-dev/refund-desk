@@ -276,6 +276,8 @@ describe("summaries", () => {
           capture_id: "9SYN0000CAPTURE01",
           status: "COMPLETED",
           amount: { value: "25.00", currency: "USD" },
+          refunded_amount: undefined,
+          refundable_amount: { value: "25.00", currency: "USD" },
           created: "2026-10-20T10:00:05Z",
           order_id: undefined,
           refunded: false,
@@ -309,11 +311,17 @@ describe("summaries", () => {
       capture_id: "9SYN0000CAPTURE01",
       status: "COMPLETED",
       amount: { value: "25.00", currency: "USD" },
+      refunded_amount: undefined,
+      refundable_amount: { value: "25.00", currency: "USD" },
       created: "2026-10-20T10:00:05Z",
       order_id: "9SYN0000ORDER0001",
       refunded: false,
     });
-    assert.equal(summarizeCapture({ id: "X1", status: "PARTIALLY_REFUNDED" }).refunded, true);
+    const partial = summarizeCapture(fixture("capture-partial.json"));
+    assert.equal(partial.refundable_amount?.value, "15.00");
+    assert.equal(partial.refunded, false);
+    assert.equal(summarizeCapture({ id: "X1", status: "PARTIALLY_REFUNDED", amount: { currency_code: "USD", value: "1.00" } }).refunded, false);
+    assert.equal(summarizeCapture({ id: "X2", status: "REFUNDED", amount: { currency_code: "USD", value: "1.00" } }).refunded, true);
   });
 
   it("lists disputes and says when there is a next page", () => {
@@ -327,5 +335,39 @@ describe("summaries", () => {
       ],
     );
     assert.deepEqual(summarizeDisputes({}), { disputes: [], more: false });
+  });
+});
+
+describe("refund calls stay on the sandbox", () => {
+  it("every request of a refund goes to the sandbox host, with redirects refused", async () => {
+    const { fetch, calls } = scripted([TOKEN, { status: 201, body: { id: "REFUND-1", status: "COMPLETED" } }]);
+    await client(fetch).refundCapture("CAPTURE-1", {}, "idem-key-0001");
+    assert.equal(calls.length, 2);
+    for (const call of calls) {
+      const url = new URL(call.url);
+      assert.equal(url.protocol, "https:");
+      assert.equal(url.host, "api-m.sandbox.paypal.com", call.url);
+      assert.equal(call.init.redirect, "error", "a redirect must never carry the call off the sandbox");
+    }
+    assert.equal(new URL(calls[1].url).pathname, "/v2/payments/captures/CAPTURE-1/refund");
+  });
+
+  it("a capture id that tries to leave the path never reaches fetch", async () => {
+    for (const id of ["../../v1/oauth2/token", "//api-m.paypal.com/x", "CAPTURE-1/../x", "a b", ""]) {
+      const { fetch, calls } = scripted([]);
+      await rejectsKind(client(fetch).refundCapture(id, {}, "idem-key-0001"), "bad_id");
+      assert.equal(calls.length, 0, id);
+    }
+  });
+
+  it("the client has no setting that points it at another host", () => {
+    for (const bad of [
+      "https://api-m.paypal.com/v2/payments/captures/X/refund",
+      "https://api.paypal.com/v1/oauth2/token",
+      "http://api-m.sandbox.paypal.com/v1/oauth2/token",
+      "https://api-m.sandbox.paypal.com.example/v1/oauth2/token",
+    ]) {
+      assert.throws(() => assertSandbox(bad), (e: unknown) => (e as PaypalError).kind === "bad_host", bad);
+    }
   });
 });

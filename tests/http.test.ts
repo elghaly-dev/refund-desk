@@ -293,13 +293,21 @@ describe("/mcp hardening", () => {
     assert.equal(reply.body.includes("node_modules"), false);
   });
 
-  it("lists the four read-only tools", async () => {
+  it("lists all desk tools including draft and confirm refund", async () => {
     const reply = await send(port, { body: TOOLS_LIST });
     const tools = (rpcResult(reply.body) as { tools: Array<{ name: string; annotations?: Record<string, unknown> }> }).tools;
-    assert.deepEqual(tools.map((tool) => tool.name).sort(), ["check_refund", "find_order", "get_capture", "list_disputes"]);
+    assert.deepEqual(tools.map((tool) => tool.name).sort(), [
+      "check_refund",
+      "confirm_refund",
+      "draft_refund",
+      "find_order",
+      "get_capture",
+      "list_disputes",
+    ]);
+    const readOnly = new Set(["check_refund", "draft_refund", "find_order", "get_capture", "list_disputes"]);
     for (const tool of tools) {
-      assert.equal(tool.annotations?.readOnlyHint, true, tool.name);
-      assert.equal(tool.annotations?.destructiveHint, false, tool.name);
+      assert.equal(tool.annotations?.readOnlyHint, readOnly.has(tool.name), tool.name);
+      assert.equal(tool.annotations?.destructiveHint, tool.name === "confirm_refund", tool.name);
     }
   });
 
@@ -374,7 +382,8 @@ describe("/mcp hardening", () => {
     const reply = await send(port, { path: "/health", method: "GET" });
     assert.equal(reply.status, 200);
     assert.match(reply.body, /"mcp_spec":"2025-11-25"/);
-    assert.match(reply.body, /"read_only":true/);
+    assert.match(reply.body, /"read_only":false/);
+    assert.match(reply.body, /"refund_confirm_required":true/);
     assert.match(reply.body, /"paypal":"sandbox"/);
     assert.match(reply.body, /"paypal_credential":"not_loaded"/);
   });
